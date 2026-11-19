@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proyecto de Lagrange</title>
+<style>
+:root{--blue:#1769aa;--ink:#172033;--muted:#526174;--line:#d7dee8;--soft:#f4f7fb}
+*{box-sizing:border-box}
+body{font-family:Arial,sans-serif;background:#eef2f7;margin:0;padding:16px;color:var(--ink)}
+main{max-width:1000px;margin:auto}
+.panel{background:#fff;padding:20px;margin:14px 0;border-radius:12px;box-shadow:0 2px 9px #00000012}
+h1,h2{text-align:center}
+h2{margin-top:26px}
+p{line-height:1.5}
+label{display:block;font-weight:bold;margin-top:8px}
+input{width:100%;padding:10px;margin:5px 0;border:1px solid #cbd5e1;border-radius:7px;font-size:1rem}
+button{padding:11px 17px;margin:7px 4px 7px 0;border:0;border-radius:7px;background:var(--blue);color:white;font-weight:bold;cursor:pointer}
+button.secondary{background:#526174}
+.point{display:grid;grid-template-columns:1fr 1fr;gap:10px;background:var(--soft);padding:10px;border-radius:8px;margin:9px 0}
+.result{background:#e6f6eb;padding:14px;border-radius:8px;overflow-wrap:anywhere}
+.step{padding:13px;margin:10px 0;background:var(--soft);border-left:4px solid var(--blue);border-radius:6px;overflow-wrap:anywhere}
+.formula{font-family:Georgia,serif;overflow-wrap:anywhere}
+.small{color:var(--muted);font-size:.92rem}
+.good{color:#137333;font-weight:bold}
+.bad{color:#b42318;font-weight:bold}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:.95rem}
+th,td{border:1px solid var(--line);padding:9px;text-align:center}
+th{background:var(--soft)}
+canvas{display:block;width:100%;height:350px;border:1px solid var(--line);border-radius:8px;background:#fff}
+#estado{font-weight:bold}
+@media(max-width:520px){body{padding:8px}.panel{padding:13px}.point{gap:7px}table{font-size:.82rem}th,td{padding:6px}}
+</style>
+</head>
+<body>
+<main>
+<section class="panel">
+<h1>Proyecto de Lagrange</h1>
+<p>Ingrese los puntos y el valor de x. Luego presione resolver.</p>
+<label for="cantidad">Cantidad de puntos (2 a 10):</label>
+<input type="number" id="cantidad" min="2" max="10" value="3">
+<button onclick="generarPuntos()">Generar puntos</button>
+<div id="puntos"></div>
+<div id="entrada" style="display:none">
+<label for="valorX">Valor de x que desea interpolar:</label>
+<input type="number" id="valorX" step="any" value="2.5">
+<button onclick="calcular()">Resolver y verificar</button>
+<button class="secondary" onclick="ejemplo()">Cargar ejemplo</button>
+</div>
+<div id="error" class="bad" role="alert"></div>
+</section>
+
+<section class="panel" id="salida" style="display:none">
+<h2>1. Datos</h2>
+<div id="tablaDatos" class="table-wrap"></div>
+
+<h2>2. Fórmula</h2>
+<div class="step formula">
+P(x) = Σ yᵢ · Lᵢ(x)<br>
+Lᵢ(x) = Π<sub>j≠i</sub> (x − xⱼ) / (xᵢ − xⱼ)
+</div>
+<p>Se calcula cada base, se multiplica por su valor de y y se suman los términos.</p>
+
+<h2>3. Desarrollo</h2>
+<div id="bases"></div>
+
+<h2>4. Polinomio</h2>
+<div id="polinomio"></div>
+
+<h2>5. Resultado</h2>
+<div id="sustitucion"></div>
+
+<h2>6. Verificación</h2>
+<p>Se reemplaza cada x original en P(x) y se compara con su y.</p>
+<div id="verificacion" class="table-wrap"></div>
+<div id="conclusionVerificacion" class="step"></div>
+
+<h2>7. Comprobación</h2>
+<div id="comprobacion" class="step"></div>
+
+<h2>8. Gráfica</h2>
+<p class="small">Puntos originales (rojo) y polinomio (azul).</p>
+<canvas id="grafica" width="950" height="430"></canvas>
+<p class="small">La curva representa el polinomio calculado.</p>
+</section>
+</main>
+
+<script>
+let datosActuales=[];
+function generarPuntos(){
+ const n=Number(document.getElementById('cantidad').value);
+ if(!Number.isInteger(n)||n<2||n>10){alert('Ingrese una cantidad entera entre 2 y 10.');return;}
+ let h='<h3>Ingrese las coordenadas</h3>';
+ for(let i=0;i<n;i++){
+  h+=`<div class="point"><div><label for="x${i}">x${i+1}</label><input type="number" step="any" id="x${i}" value="${i+1}"></div><div><label for="y${i}">y${i+1}</label><input type="number" step="any" id="y${i}" value="${(i+1)*(i+1)}"></div></div>`;
+ }
+ document.getElementById('puntos').innerHTML=h;
+ document.getElementById('entrada').style.display='block';
+ document.getElementById('salida').style.display='none';
+ document.getElementById('error').textContent='';
+}
+function leerPuntos(){
+ const n=Number(document.getElementById('cantidad').value),p=[];
+ for(let i=0;i<n;i++){
+  const sx=document.getElementById('x'+i).value,sy=document.getElementById('y'+i).value;
+  const x=Number(sx),y=Number(sy);
+  if(sx===''||sy===''||!Number.isFinite(x)||!Number.isFinite(y))throw Error('Complete todos los valores x e y con números válidos.');
+  if(p.some(q=>q.x===x))throw Error('Los valores de x no pueden repetirse; cada punto debe tener una abscisa diferente.');
+  p.push({x,y});
+ }
+ return p;
+}
+function fmt(v){
+ if(Math.abs(v)<1e-10)v=0;
+ return Number(v.toPrecision(9)).toString();
+}
+function multPol(a,b){
+ const r=Array(a.length+b.length-1).fill(0);
+ for(let i=0;i<a.length;i++)for(let j=0;j<b.length;j++)r[i+j]+=a[i]*b[j];
+ return r;
+}
+function baseLagrange(i,p){
+ let num=[1],den=1,factores=[];
+ for(let j=0;j<p.length;j++)if(i!==j){
+  num=multPol(num,[-p[j].x,1]);
+  den*=p[i].x-p[j].x;
+  factores.push({xj:p[j].x,den:p[i].x-p[j].x});
+ }
+ return {num,den,coef:num.map(v=>v/den),factores};
+}
+function sumar(a,b){
+ const r=Array(Math.max(a.length,b.length)).fill(0);
+ for(let i=0;i<r.length;i++)r[i]=(a[i]||0)+(b[i]||0);
+ return r;
+}
+function evaluar(c,x){
+ let r=0;
+ for(let i=c.length-1;i>=0;i--)r=r*x+c[i];
+ return r;
+}
+function evaluarLagrange(x,p){
+ let total=0,partes=[];
+ for(let i=0;i<p.length;i++){
+  let li=1;
+  for(let j=0;j<p.length;j++)if(i!==j)li*=(x-p[j].x)/(p[i].x-p[j].x);
+  const t=p[i].y*li;total+=t;partes.push({li,t});
+ }
+ return {total,partes};
+}
+function polinomioTexto(c){
+ let out='';
+ for(let i=c.length-1;i>=0;i--){
+  if(Math.abs(c[i])<1e-9)continue;
+  const v=c[i],a=Math.abs(v);
+  let term='';
+  if(i===0)term=fmt(a);
+  else term=(Math.abs(a-1)<1e-9?'':fmt(a)+'·')+'x'+(i===1?'':'^'+i);
+  if(!out)out=(v<0?'−':'')+term;
+  else out+=(v<0?' − ':' + ')+term;
+ }
+ return out||'0';
+}
+function calcular(){
+ try{
+  const p=leerPuntos(),campo=document.getElementById('valorX');
+  if(campo.value==='')throw Error('Ingrese el valor de x que desea interpolar.');
+  const xv=Number(campo.value);
+  if(!Number.isFinite(xv))throw Error('El valor de x no es válido.');
+
+  let pol=[0],bases=[],htmlBases='';
+  p.forEach((q,i)=>{
+   const b=baseLagrange(i,p);bases.push(b);
+   const contrib=b.coef.map(v=>v*q.y);
+   pol=sumar(pol,contrib);
+   const factores=b.factores.map(f=>`(x − (${fmt(f.xj)}))`).join(' · ');
+   const denominador=b.factores.map(f=>`(${fmt(f.den)})`).join(' · ');
+   htmlBases+=`<div class="step">
+    <b>Base L${i+1}(x), correspondiente al punto (${fmt(q.x)}, ${fmt(q.y)})</b>
+    <p><b>1) Sustitución:</b></p>
+    <p class="formula">L${i+1}(x) = [${factores}] / [${denominador}]</p>
+    <p><b>2) Numerador:</b></p>
+    <p class="formula">(${polinomioTexto(b.num)})</p>
+    <p><b>3) Denominador:</b></p>
+    <p>${fmt(b.den)}</p>
+    <p><b>4) Base simplificada:</b></p>
+    <p class="formula">L${i+1}(x) = (${polinomioTexto(b.num)}) / (${fmt(b.den)})</p>
+    <p><b>5) Multiplicar por y${i+1} = ${fmt(q.y)}:</b></p>
+    <p class="formula">${fmt(q.y)} · [${polinomioTexto(b.coef)}] = ${polinomioTexto(contrib)}</p>
+   </div>`;
+  });
+  const directo=evaluarLagrange(xv,p),expandido=evaluar(pol,xv);
+  const tolerancia=1e-7*Math.max(1,Math.abs(directo.total),Math.abs(expandido));
+  document.getElementById('tablaDatos').innerHTML=`<table><thead><tr><th>Punto</th><th>xᵢ</th><th>yᵢ</th></tr></thead><tbody>${p.map((q,i)=>`<tr><td>${i+1}</td><td>${fmt(q.x)}</td><td>${fmt(q.y)}</td></tr>`).join('')}</tbody></table>`;
+  document.getElementById('bases').innerHTML=htmlBases;
+  document.getElementById('polinomio').innerHTML=`<div class="step"><p>Sumando y reduciendo términos semejantes:</p><p class="formula">P(x) = ${p.map((q,i)=>`${fmt(q.y)} · L${i+1}(x)`).join(' + ')}</p><p class="formula"><b>P(x) = ${polinomioTexto(pol)}</b></p><p class="small">El grado del polinomio es como máximo ${p.length-1}, porque se ingresaron ${p.length} puntos con valores de x diferentes.</p></div>`;
+  document.getElementById('sustitucion').innerHTML=`<div class="step"><p>Se sustituye x = ${fmt(xv)} en el polinomio:</p><p class="formula">P(${fmt(xv)}) = ${polinomioTexto(pol).replaceAll('x','('+fmt(xv)+')')}</p><p><b>Resultado:</b> P(${fmt(xv)}) = ${fmt(expandido)}</p></div>`;
+
+  let filas=[],maxError=0;
+  p.forEach((q,i)=>{
+   const calculado=evaluar(pol,q.x),err=Math.abs(q.y-calculado);
+   maxError=Math.max(maxError,err);
+   filas.push(`<tr><td>${i+1}</td><td>${fmt(q.x)}</td><td>${fmt(q.y)}</td><td>${fmt(calculado)}</td><td>${fmt(err)}</td><td class="${err<1e-7*Math.max(1,Math.abs(q.y))?'good':'bad'}">${err<1e-7*Math.max(1,Math.abs(q.y))?'Correcto':'Revisar'}</td></tr>`);
+  });
+  document.getElementById('verificacion').innerHTML=`<table><thead><tr><th>Punto</th><th>xᵢ</th><th>y original</th><th>P(xᵢ)</th><th>Error absoluto</th><th>Estado</th></tr></thead><tbody>${filas.join('')}</tbody></table>`;
+  const todoCorrecto=filas.every((_,i)=>Math.abs(p[i].y-evaluar(pol,p[i].x))<1e-7*Math.max(1,Math.abs(p[i].y)));
+  document.getElementById('conclusionVerificacion').innerHTML=todoCorrecto
+   ? `<span class="good">VERIFICACIÓN APROBADA.</span> El polinomio reproduce los valores y de todos los puntos ingresados, dentro de la tolerancia numérica. El mayor error absoluto encontrado es ${fmt(maxError)}.`
+   : `<span class="bad">VERIFICACIÓN CON DIFERENCIAS.</span> Revise los datos o los cálculos. El mayor error absoluto es ${fmt(maxError)}.`;
+
+  const ok=Math.abs(directo.total-expandido)<=tolerancia;
+  document.getElementById('comprobacion').innerHTML=`<p><b>Por la fórmula de Lagrange:</b></p>
+  <p>${directo.partes.map((z,i)=>`${fmt(p[i].y)} · ${fmt(z.li)}`).join(' + ')} = <b>${fmt(directo.total)}</b></p>
+  <p><b>Por el polinomio desarrollado:</b></p>
+  <p>P(${fmt(xv)}) = <b>${fmt(expandido)}</b></p>
+  <p class="${ok?'good':'bad'}">${ok?'Coinciden los dos procedimientos. La comprobación es correcta.':'Los resultados no coinciden dentro de la tolerancia; revise el cálculo.'}</p>
+  <p class="small">Ambos resultados deben coincidir.</p>`;
+  document.getElementById('salida').style.display='block';
+  dibujar(p,pol);
+  document.getElementById('error').textContent='';
+ }catch(e){document.getElementById('error').textContent=e.message;}
+}
+function dibujar(p,pol){
+ const c=document.getElementById('grafica'),ctx=c.getContext('2d'),W=c.width,H=c.height;
+ ctx.clearRect(0,0,W,H);
+ let xmin=Math.min(...p.map(q=>q.x)),xmax=Math.max(...p.map(q=>q.x));
+ if(xmin===xmax){xmin-=1;xmax+=1;}
+ const margen=(xmax-xmin)*.12;xmin-=margen;xmax+=margen;
+ const muestras=[];
+ for(let k=0;k<=400;k++){const x=xmin+(xmax-xmin)*k/400;muestras.push({x,y:evaluar(pol,x)});}
+ let ymin=Math.min(...p.map(q=>q.y),...muestras.map(q=>q.y)),ymax=Math.max(...p.map(q=>q.y),...muestras.map(q=>q.y));
+ if(ymin===ymax){ymin-=1;ymax+=1;}
+ const my=(ymax-ymin)*.12;ymin-=my;ymax+=my;
+ const L=70,R=25,T=25,B=48,gw=W-L-R,gh=H-T-B;
+ const X=x=>L+(x-xmin)/(xmax-xmin)*gw,Y=y=>T+(ymax-y)/(ymax-ymin)*gh;
+ ctx.strokeStyle='#e4e9f0';ctx.lineWidth=1;ctx.font='13px Arial';ctx.fillStyle='#526174';
+ for(let i=0;i<=5;i++){
+  const yy=T+gh*i/5,val=ymax-(ymax-ymin)*i/5;
+  ctx.beginPath();ctx.moveTo(L,yy);ctx.lineTo(W-R,yy);ctx.stroke();ctx.fillText(fmt(val),5,yy+4);
+  const xx=L+gw*i/5,xv=xmin+(xmax-xmin)*i/5;
+  ctx.beginPath();ctx.moveTo(xx,T);ctx.lineTo(xx,H-B);ctx.stroke();ctx.fillText(fmt(xv),xx-15,H-18);
+ }
+ ctx.strokeStyle='#344054';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(L,T);ctx.lineTo(L,H-B);ctx.lineTo(W-R,H-B);ctx.stroke();
+ ctx.strokeStyle='#1769aa';ctx.lineWidth=3;ctx.beginPath();
+ muestras.forEach((q,i)=>{if(i===0)ctx.moveTo(X(q.x),Y(q.y));else ctx.lineTo(X(q.x),Y(q.y));});ctx.stroke();
+ p.forEach(q=>{ctx.fillStyle='#d94841';ctx.beginPath();ctx.arc(X(q.x),Y(q.y),6,0,Math.PI*2);ctx.fill();ctx.fillStyle='#172033';ctx.fillText(`(${fmt(q.x)}, ${fmt(q.y)})`,X(q.x)+8,Y(q.y)-9);});
+ ctx.fillStyle='#1769aa';ctx.fillText('Polinomio',W-130,20);
+ ctx.fillStyle='#d94841';ctx.fillText('Puntos originales',W-145,39);
+}
+function ejemplo(){
+ document.getElementById('cantidad').value=3;generarPuntos();
+ [[1,1],[2,4],[3,9]].forEach((q,i)=>{document.getElementById('x'+i).value=q[0];document.getElementById('y'+i).value=q[1];});
+ document.getElementById('valorX').value=2.5;calcular();
+}
+generarPuntos();
+</script>
+</body>
+</html>
